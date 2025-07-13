@@ -1,4 +1,7 @@
+// commands/tools/pinterest.js (Alternative Solutions - Multiple Methods)
+
 const axios = require('axios');
+const puppeteer = require('puppeteer'); // npm install puppeteer
 
 // --- PENTING: Mengambil cookie dari variabel lingkungan (.env) ---
 const PINTEREST_COOKIE = process.env.PINTEREST_COOKIE;
@@ -8,197 +11,248 @@ function pickRandom(list) {
   return list[Math.floor(Math.random() * list.length)];
 }
 
-// Fungsi untuk mendapatkan User-Agent yang lebih realistis
-function getRandomUserAgent() {
-  const userAgents = [
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-  ];
-  return userAgents[Math.floor(Math.random() * userAgents.length)];
-}
-
 // Fungsi untuk delay/menunggu
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Fungsi utama untuk mencari di Pinterest dengan perbaikan anti-deteksi
-async function pinterestSearch(query) {
-  return new Promise(async (resolve, reject) => {
-    try {
-      // Memeriksa apakah cookie sudah diatur di file .env
-      if (!PINTEREST_COOKIE) {
-        return reject(new Error("Cookie Pinterest tidak ditemukan di file .env Anda. Silakan tambahkan PINTEREST_COOKIE di file .env"));
-      }
-
-      // Tambahkan delay random untuk menghindari rate limiting
-      await delay(Math.random() * 1000 + 500);
-
-      // --- PERBAIKAN: Headers yang lebih realistis dan up-to-date ---
-      const headers = {
-        'accept': 'application/json, text/javascript, */*, q=0.01',
-        'accept-encoding': 'gzip, deflate, br',
-        'accept-language': 'en-US,en;q=0.9,id;q=0.8',
-        'cache-control': 'no-cache',
-        'cookie': PINTEREST_COOKIE,
-        'dnt': '1',
-        'pragma': 'no-cache',
-        'referer': `https://www.pinterest.com/search/pins/?q=${encodeURIComponent(query)}`,
-        'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"Windows"',
-        'sec-fetch-dest': 'empty',
-        'sec-fetch-mode': 'cors',
-        'sec-fetch-site': 'same-origin',
-        'user-agent': getRandomUserAgent(),
-        'x-app-version': 'c056fb7',
-        'x-pinterest-appstate': 'active',
-        'x-requested-with': 'XMLHttpRequest'
-      };
-
-      // Konfigurasi axios dengan timeout dan retry
-      const axiosConfig = {
-        headers,
-        timeout: 15000, // 15 detik timeout
-        params: {
-          source_url: `/search/pins/?q=${encodeURIComponent(query)}`,
-          data: JSON.stringify({
-            options: { 
-              query: query, 
-              scope: "pins",
-              page_size: 25 // Menambah jumlah hasil
-            },
-            context: {},
-          }),
-        },
-      };
-
-      // Mencoba request dengan retry mechanism
-      let lastError;
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        try {
-          console.log(`Mencoba request ke Pinterest (percobaan ${attempt}/3)...`);
-          
-          const { data } = await axios.get('https://www.pinterest.com/resource/BaseSearchResource/get/', axiosConfig);
-          
-          if (data.resource_response?.data?.results) {
-            const results = data.resource_response.data.results;
-            console.log(`Ditemukan ${results.length} hasil dari Pinterest`);
-            
-            if (results.length > 0) {
-              // Ambil URL gambar dengan berbagai resolusi sebagai fallback
-              const imageUrls = results.map(item => {
-                const images = item.images;
-                if (images) {
-                  return images['736x']?.url || 
-                         images['564x']?.url || 
-                         images['474x']?.url || 
-                         images['236x']?.url ||
-                         images.orig?.url;
-                }
-                return null;
-              }).filter(url => url);
-              
-              return resolve(imageUrls);
-            } else {
-              return resolve([]);
-            }
-          } else {
-            throw new Error("Format response tidak sesuai");
-          }
-          
-        } catch (error) {
-          lastError = error;
-          console.log(`Percobaan ${attempt} gagal:`, error.message);
-          
-          if (attempt < 3) {
-            // Tunggu lebih lama sebelum retry
-            await delay(2000 * attempt);
-          }
-        }
-      }
-      
-      // Jika semua percobaan gagal
-      throw lastError;
-      
-    } catch (error) {
-      console.error("Gagal mengambil data dari API Pinterest:", error.message);
-      
-      // Memberikan pesan error yang lebih spesifik
-      if (error.response) {
-        const status = error.response.status;
-        if (status === 403) {
-          reject(new Error("Pinterest memblokir permintaan ini. Coba perbarui cookie atau tunggu beberapa saat."));
-        } else if (status === 429) {
-          reject(new Error("Terlalu banyak permintaan. Tunggu sebentar sebelum mencoba lagi."));
-        } else {
-          reject(new Error(`HTTP Error ${status}: ${error.response.statusText}`));
-        }
-      } else if (error.code === 'ECONNABORTED') {
-        reject(new Error("Koneksi timeout. Coba lagi nanti."));
-      } else {
-        reject(error);
-      }
-    }
-  });
-}
-
-// Fungsi alternative menggunakan scraping method yang berbeda
-async function pinterestSearchAlternative(query) {
+// === METODE 1: Menggunakan Puppeteer (Headless Browser) ===
+async function pinterestSearchPuppeteer(query) {
+  let browser;
   try {
-    console.log("Mencoba metode alternatif...");
+    console.log("Mencoba metode Puppeteer...");
     
-    // Method alternatif menggunakan Pinterest RSS atau public API
-    const searchUrl = `https://www.pinterest.com/search/pins/?q=${encodeURIComponent(query)}&rs=typed`;
+    browser = await puppeteer.launch({
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--no-first-run',
+        '--no-zygote',
+        '--disable-gpu'
+      ]
+    });
     
-    const headers = {
-      'User-Agent': getRandomUserAgent(),
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-      'Accept-Language': 'en-US,en;q=0.5',
-      'Accept-Encoding': 'gzip, deflate, br',
-      'Connection': 'keep-alive',
-      'Upgrade-Insecure-Requests': '1',
-    };
-
-    const response = await axios.get(searchUrl, { headers, timeout: 10000 });
+    const page = await browser.newPage();
     
-    // Regex untuk mengekstrak URL gambar dari HTML
-    const imageRegex = /"url":"(https:\/\/i\.pinimg\.com\/[^"]+)"/g;
-    const matches = [...response.data.matchAll(imageRegex)];
+    // Set user agent dan viewport
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+    await page.setViewport({ width: 1366, height: 768 });
     
-    if (matches.length > 0) {
-      const imageUrls = matches.map(match => match[1]).filter(url => url);
-      return imageUrls.slice(0, 20); // Ambil maksimal 20 gambar
+    // Set cookies jika ada
+    if (PINTEREST_COOKIE) {
+      const cookies = PINTEREST_COOKIE.split(';').map(cookie => {
+        const [name, value] = cookie.split('=');
+        return { name: name.trim(), value: value?.trim() || '', domain: '.pinterest.com' };
+      });
+      await page.setCookie(...cookies);
     }
     
-    return [];
+    // Navigasi ke halaman pencarian
+    const searchUrl = `https://www.pinterest.com/search/pins/?q=${encodeURIComponent(query)}`;
+    await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+    
+    // Tunggu gambar dimuat
+    await page.waitForSelector('img[srcset]', { timeout: 10000 });
+    
+    // Scroll untuk memuat lebih banyak gambar
+    await page.evaluate(() => {
+      return new Promise((resolve) => {
+        let totalHeight = 0;
+        const distance = 100;
+        const timer = setInterval(() => {
+          const scrollHeight = document.body.scrollHeight;
+          window.scrollBy(0, distance);
+          totalHeight += distance;
+          
+          if (totalHeight >= scrollHeight || totalHeight >= 2000) {
+            clearInterval(timer);
+            resolve();
+          }
+        }, 100);
+      });
+    });
+    
+    // Ekstrak URL gambar
+    const imageUrls = await page.evaluate(() => {
+      const images = document.querySelectorAll('img[srcset]');
+      const urls = [];
+      
+      images.forEach(img => {
+        const srcset = img.getAttribute('srcset');
+        if (srcset) {
+          const matches = srcset.match(/https:\/\/i\.pinimg\.com\/[^\s]+/g);
+          if (matches) {
+            urls.push(matches[0]);
+          }
+        }
+      });
+      
+      return [...new Set(urls)]; // Remove duplicates
+    });
+    
+    await browser.close();
+    return imageUrls.slice(0, 20);
+    
   } catch (error) {
-    console.error("Metode alternatif juga gagal:", error.message);
+    if (browser) await browser.close();
     throw error;
   }
 }
 
-// Fungsi video tetap menggunakan metode yang sama
-async function pinterestVideoSearch(query) {
-    try {
-      return await pinterestSearch(query + " video");
-    } catch (error) {
-      // Fallback ke metode alternatif
-      return await pinterestSearchAlternative(query + " video");
+// === METODE 2: Menggunakan API Pihak Ketiga (RapidAPI) ===
+async function pinterestSearchRapidAPI(query) {
+  try {
+    console.log("Mencoba metode RapidAPI...");
+    
+    const rapidApiKey = process.env.RAPIDAPI_KEY; // Tambahkan ke .env
+    if (!rapidApiKey) {
+      throw new Error("RAPIDAPI_KEY tidak ditemukan di .env");
     }
+    
+    const response = await axios.get('https://pinterest-scraper-api.p.rapidapi.com/search', {
+      params: { query, limit: 20 },
+      headers: {
+        'X-RapidAPI-Key': rapidApiKey,
+        'X-RapidAPI-Host': 'pinterest-scraper-api.p.rapidapi.com'
+      }
+    });
+    
+    return response.data.results?.map(item => item.image_url) || [];
+    
+  } catch (error) {
+    console.error("RapidAPI gagal:", error.message);
+    throw error;
+  }
 }
 
-// Module exports dan logika execute yang diperbaiki
+// === METODE 3: Menggunakan Unsplash API (Alternative) ===
+async function unsplashSearch(query) {
+  try {
+    console.log("Menggunakan Unsplash sebagai alternatif...");
+    
+    const unsplashAccessKey = process.env.UNSPLASH_ACCESS_KEY; // Tambahkan ke .env
+    if (!unsplashAccessKey) {
+      throw new Error("UNSPLASH_ACCESS_KEY tidak ditemukan di .env");
+    }
+    
+    const response = await axios.get('https://api.unsplash.com/search/photos', {
+      params: { 
+        query, 
+        per_page: 20,
+        orientation: 'all'
+      },
+      headers: {
+        'Authorization': `Client-ID ${unsplashAccessKey}`
+      }
+    });
+    
+    return response.data.results?.map(item => item.urls.regular) || [];
+    
+  } catch (error) {
+    console.error("Unsplash gagal:", error.message);
+    throw error;
+  }
+}
+
+// === METODE 4: Menggunakan Pixabay API (Alternative) ===
+async function pixabaySearch(query) {
+  try {
+    console.log("Menggunakan Pixabay sebagai alternatif...");
+    
+    const pixabayApiKey = process.env.PIXABAY_API_KEY; // Tambahkan ke .env
+    if (!pixabayApiKey) {
+      throw new Error("PIXABAY_API_KEY tidak ditemukan di .env");
+    }
+    
+    const response = await axios.get('https://pixabay.com/api/', {
+      params: { 
+        key: pixabayApiKey,
+        q: query,
+        per_page: 20,
+        image_type: 'photo'
+      }
+    });
+    
+    return response.data.hits?.map(item => item.webformatURL) || [];
+    
+  } catch (error) {
+    console.error("Pixabay gagal:", error.message);
+    throw error;
+  }
+}
+
+// === METODE 5: Menggunakan Pexels API (Alternative) ===
+async function pexelsSearch(query) {
+  try {
+    console.log("Menggunakan Pexels sebagai alternatif...");
+    
+    const pexelsApiKey = process.env.PEXELS_API_KEY; // Tambahkan ke .env
+    if (!pexelsApiKey) {
+      throw new Error("PEXELS_API_KEY tidak ditemukan di .env");
+    }
+    
+    const response = await axios.get('https://api.pexels.com/v1/search', {
+      params: { 
+        query, 
+        per_page: 20 
+      },
+      headers: {
+        'Authorization': pexelsApiKey
+      }
+    });
+    
+    return response.data.photos?.map(item => item.src.medium) || [];
+    
+  } catch (error) {
+    console.error("Pexels gagal:", error.message);
+    throw error;
+  }
+}
+
+// Fungsi utama yang mencoba semua metode
+async function pinterestSearch(query) {
+  const methods = [
+    { name: 'Puppeteer', func: pinterestSearchPuppeteer },
+    { name: 'RapidAPI', func: pinterestSearchRapidAPI },
+    { name: 'Unsplash', func: unsplashSearch },
+    { name: 'Pixabay', func: pixabaySearch },
+    { name: 'Pexels', func: pexelsSearch }
+  ];
+  
+  for (const method of methods) {
+    try {
+      console.log(`Mencoba metode ${method.name}...`);
+      const results = await method.func(query);
+      if (results && results.length > 0) {
+        console.log(`✅ Berhasil dengan ${method.name}: ${results.length} hasil`);
+        return results;
+      }
+    } catch (error) {
+      console.log(`❌ ${method.name} gagal: ${error.message}`);
+      continue;
+    }
+  }
+  
+  throw new Error("Semua metode gagal");
+}
+
+// Fungsi video
+async function pinterestVideoSearch(query) {
+  return await pinterestSearch(query + " video");
+}
+
+// Module exports
 module.exports = {
   name: "pin",
-  alias: ["pinterest"],
-  description: "Mencari gambar atau video dari Pinterest.",
+  alias: ["pinterest", "img", "image"],
+  description: "Mencari gambar menggunakan multiple sources (Pinterest, Unsplash, Pixabay, Pexels).",
   category: "tools",
   execute: async (msg, { bot, args, usedPrefix, command }) => {
     if (!args.length) {
-      const helpMessage = `*Pencarian Pinterest* 🔎\n\nFitur ini digunakan untuk mencari media dari Pinterest.\n\n*Cara Penggunaan:*\n\`${usedPrefix + command} <query>\`\nContoh: \`${usedPrefix + command} cyberpunk city\`\n\n*Opsi Tambahan:*\n- \`-j <jumlah>\`: Untuk mengirim beberapa hasil sekaligus (maksimal 5).\n  Contoh: \`${usedPrefix + command} cat -j 3\`\n\n- \`-v\`: Untuk mencoba memprioritaskan pencarian video.\n  Contoh: \`${usedPrefix + command} aesthetic scenery -v\`\n\n*Catatan:* Pastikan PINTEREST_COOKIE sudah diatur di file .env`;
+      const helpMessage = `*🖼️ Pencarian Gambar Multi-Source*\n\nMencari gambar dari berbagai sumber:\n• Pinterest (jika tersedia)\n• Unsplash\n• Pixabay  \n• Pexels\n\n*Cara Penggunaan:*\n\`${usedPrefix + command} <query>\`\nContoh: \`${usedPrefix + command} sunset landscape\`\n\n*Opsi Tambahan:*\n- \`-j <jumlah>\`: Kirim beberapa hasil (max 5)\n  Contoh: \`${usedPrefix + command} cat -j 3\`\n\n*Setup (Opsional):*\nTambahkan di file .env untuk hasil lebih baik:\n\`\`\`\nUNSPLASH_ACCESS_KEY=your_key\nPIXABAY_API_KEY=your_key\nPEXELS_API_KEY=your_key\nRAPIDAPI_KEY=your_key\n\`\`\`\n\n*Cara mendapatkan API keys:*\n• Unsplash: https://unsplash.com/developers\n• Pixabay: https://pixabay.com/api/docs/\n• Pexels: https://www.pexels.com/api/\n• RapidAPI: https://rapidapi.com/`;
       return bot.sendMessage(msg.from, { text: helpMessage }, { quoted: msg });
     }
 
@@ -227,40 +281,30 @@ module.exports = {
 
     try {
         await msg.react("⏳");
-        console.log(`Mencari: "${searchQuery}" ${searchVideos ? '(video)' : '(gambar)'}`);
+        console.log(`🔍 Mencari: "${searchQuery}"`);
         
-        let results = [];
-        
-        try {
-          // Coba metode utama terlebih dahulu
-          const searchFunction = searchVideos ? pinterestVideoSearch : pinterestSearch;
-          results = await searchFunction(searchQuery);
-        } catch (error) {
-          console.log("Metode utama gagal, mencoba metode alternatif...");
-          // Jika gagal, coba metode alternatif
-          results = await pinterestSearchAlternative(searchQuery);
-        }
+        const searchFunction = searchVideos ? pinterestVideoSearch : pinterestSearch;
+        const results = await searchFunction(searchQuery);
 
         if (!results.length) {
             await msg.react("❌");
             return msg.reply(`Maaf, tidak ada hasil yang ditemukan untuk query "${searchQuery}".`);
         }
 
-        console.log(`Berhasil mendapatkan ${results.length} hasil`);
+        console.log(`✅ Berhasil mendapatkan ${results.length} hasil`);
 
-        // Kirim hasil dengan delay untuk menghindari spam
+        // Kirim hasil dengan delay
         for (let i = 0; i < count; i++) {
             const randomMedia = pickRandom(results);
             if (randomMedia) {
                 try {
                   await bot.sendMessage(msg.from, { 
                       image: { url: randomMedia }, 
-                      caption: `📌 Hasil pencarian untuk: *${searchQuery}*\n\n_Gambar ${i + 1} dari ${count}_` 
+                      caption: `🖼️ Hasil pencarian: *${searchQuery}*\n\n📊 Gambar ${i + 1} dari ${count}\n🔄 Sumber: Multi-platform` 
                   }, { quoted: msg });
                   
-                  // Delay antar pengiriman
                   if (i < count - 1) {
-                    await delay(1000);
+                    await delay(1500); // Delay lebih lama
                   }
                 } catch (sendError) {
                   console.log(`Gagal mengirim gambar ${i + 1}:`, sendError.message);
@@ -271,17 +315,15 @@ module.exports = {
         await msg.react("✅");
         
     } catch (error) {
-        console.error("Error pada perintah Pinterest:", error);
+        console.error("Error pada pencarian gambar:", error);
         await msg.react("❌");
         
-        let errorMessage = "Terjadi kesalahan saat mencari di Pinterest.";
+        let errorMessage = "Maaf, terjadi kesalahan saat mencari gambar.";
         
-        if (error.message.includes("Cookie")) {
-          errorMessage = "Cookie Pinterest tidak valid atau belum diatur. Silakan perbarui PINTEREST_COOKIE di file .env";
-        } else if (error.message.includes("memblokir")) {
-          errorMessage = "Pinterest memblokir permintaan. Coba lagi nanti atau perbarui cookie.";
-        } else if (error.message.includes("timeout")) {
-          errorMessage = "Koneksi timeout. Coba lagi nanti.";
+        if (error.message.includes("Semua metode gagal")) {
+          errorMessage = "Semua sumber gambar tidak dapat diakses saat ini. Silakan coba lagi nanti atau tambahkan API keys di file .env untuk hasil yang lebih baik.";
+        } else if (error.message.includes("tidak ditemukan")) {
+          errorMessage = "Untuk hasil yang lebih baik, silakan tambahkan API keys di file .env. Lihat perintah help untuk panduan.";
         }
         
         msg.reply(`❌ ${errorMessage}`);

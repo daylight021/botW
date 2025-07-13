@@ -1,14 +1,17 @@
 const puppeteer = require('puppeteer');
-const fs = require('fs-extra'); // Menggunakan fs-extra untuk kemudahan
+const fs = require('fs-extra');
 const path = require('path');
+const axios = require('axios');
 
-// Fungsi untuk scroll halaman secara otomatis
+// --- FUNGSI HELPER ---
+
+// Fungsi untuk scroll halaman
 async function autoScroll(page) {
   await page.evaluate(async () => {
     await new Promise(resolve => {
       let totalHeight = 0;
       const distance = 200;
-      const scrollMax = 5000; // Batas maksimal scroll
+      const scrollMax = 5000;
       const timer = setInterval(() => {
         window.scrollBy(0, distance);
         totalHeight += distance;
@@ -21,13 +24,30 @@ async function autoScroll(page) {
   });
 }
 
-// Fungsi untuk mengambil link gambar atau halaman pin
+// Fungsi untuk mengacak array
+function shuffleArray(array) {
+    for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+    }
+    return array;
+}
+
+// --- FUNGSI UTAMA SCRAPING & DOWNLOAD ---
+
+// Fungsi untuk mendapatkan link dari Pinterest
 async function getPinterestLinks(keyword, type = 'image') {
   let browser;
   try {
-    // Konfigurasi Puppeteer untuk lingkungan Termux/Linux
+    // --- PERBAIKAN PUPPETEER ---
+    // Menentukan path ke executable chromium yang sudah di-install
+    const executablePath = fs.existsSync('/usr/bin/chromium-browser') 
+      ? '/usr/bin/chromium-browser' 
+      : undefined;
+
     browser = await puppeteer.launch({
       headless: true,
+      executablePath, // Menggunakan browser dari sistem
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -35,7 +55,7 @@ async function getPinterestLinks(keyword, type = 'image') {
         '--disable-accelerated-2d-canvas',
         '--no-first-run',
         '--no-zygote',
-        '--single-process', // Opsional, bisa membantu di lingkungan terbatas
+        '--single-process',
         '--disable-gpu'
       ]
     });
@@ -54,14 +74,13 @@ async function getPinterestLinks(keyword, type = 'image') {
     if (type === 'image') {
       results = await page.evaluate(() => {
         const images = Array.from(document.querySelectorAll('img[src*="i.pinimg.com"]'));
-        const imageUrls = images.map(img => img.src.replace(/236x/, '736x')); // Mengambil versi resolusi lebih tinggi
-        return [...new Set(imageUrls)]; // Menghilangkan duplikat
+        const imageUrls = images.map(img => img.src.replace(/236x/, '736x'));
+        return [...new Set(imageUrls)];
       });
     } else if (type === 'video') {
       results = await page.evaluate(() => {
         const anchors = Array.from(document.querySelectorAll('a[href*="/pin/"]'));
-        const uniqueLinks = [...new Set(anchors.map(a => a.href))];
-        return uniqueLinks;
+        return [...new Set(anchors.map(a => a.href))];
       });
     }
     
@@ -71,17 +90,35 @@ async function getPinterestLinks(keyword, type = 'image') {
   } catch (error) {
     console.error("Error saat scraping dengan Puppeteer:", error);
     if (browser) await browser.close();
-    return []; // Mengembalikan array kosong jika gagal
+    return [];
   }
 }
 
-// Fungsi untuk mengacak array
-function shuffleArray(array) {
-  for (let i = array.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [array[i], array[j]] = [array[j], array[i]];
+// Fungsi untuk mengunduh video via Pintodown (dari kode Anda)
+async function downloadViaPintodown(pinUrl) {
+  let browser;
+  try {
+    const executablePath = fs.existsSync('/usr/bin/chromium-browser') ? '/usr/bin/chromium-browser' : undefined;
+    browser = await puppeteer.launch({ headless: true, executablePath, args: ['--no-sandbox'] });
+    const page = await browser.newPage();
+    
+    await page.goto('https://pintodown.com/', { waitUntil: 'domcontentloaded' });
+
+    await page.type('#pinterest_video_url', pinUrl);
+    await page.click('button.pinterest__button--download');
+
+    // Menunggu link download muncul
+    await page.waitForSelector('a[href$=".mp4"]', { timeout: 15000 });
+    const videoUrl = await page.evaluate(() => document.querySelector('a[href$=".mp4"]').href);
+
+    await browser.close();
+    return videoUrl; // Mengembalikan URL video untuk dikirim
+
+  } catch (err) {
+    console.error(`❌ Gagal unduh video dari ${pinUrl}: ${err.message}`);
+    if (browser) await browser.close();
+    return null; // Mengembalikan null jika gagal
   }
-  return array;
 }
 
 // --- LOGIKA UTAMA PERINTAH BOT ---
@@ -89,11 +126,11 @@ function shuffleArray(array) {
 module.exports = {
   name: "pin",
   alias: ["pinterest"],
-  description: "Mencari gambar dari Pinterest.",
+  description: "Mencari gambar atau video dari Pinterest.",
   category: "tools",
   execute: async (msg, { bot, args, usedPrefix, command }) => {
     if (!args.length) {
-      const helpMessage = `*Pencarian Pinterest* 🔎\n\nFitur ini digunakan untuk mencari media dari Pinterest.\n\n*Cara Penggunaan:*\n\`${usedPrefix + command} <query>\`\nContoh: \`${usedPrefix + command} cyberpunk city\`\n\n*Opsi Tambahan:*\n- \`-j <jumlah>\`: Untuk mengirim beberapa gambar sekaligus (maksimal 5).\n  Contoh: \`${usedPrefix + command} cat -j 3\`\n\n- \`-v\`: Untuk mencoba mencari video (fitur eksperimental, mungkin butuh waktu lebih lama).\n  Contoh: \`${usedPrefix + command} aesthetic scenery -v\``;
+      const helpMessage = `*Pencarian Pinterest* 🔎\n\nFitur ini digunakan untuk mencari media dari Pinterest.\n\n*Cara Penggunaan:*\n\`${usedPrefix + command} <query>\`\nContoh: \`${usedPrefix + command} cyberpunk city\`\n\n*Opsi Tambahan:*\n- \`-j <jumlah>\`: Untuk mengirim beberapa hasil sekaligus (maksimal 5).\n  Contoh: \`${usedPrefix + command} cat -j 3\`\n\n- \`-v\`: Untuk mencari video.\n  Contoh: \`${usedPrefix + command} nature timelapse -v\``;
       return bot.sendMessage(msg.from, { text: helpMessage }, { quoted: msg });
     }
 
@@ -103,12 +140,8 @@ module.exports = {
 
     for (let i = 0; i < args.length; i++) {
       if (args[i].toLowerCase() === '-j') {
-        count = parseInt(args[i + 1], 10);
-        if (isNaN(count) || count < 1) count = 1;
-        if (count > 5) {
-          count = 5;
-          msg.reply("Jumlah maksimal yang diizinkan adalah 5.");
-        }
+        count = parseInt(args[i + 1], 10) || 1;
+        count = Math.min(Math.max(1, count), 5); // Batasi antara 1 dan 5
         i++;
       } else if (args[i].toLowerCase() === '-v') {
         searchVideos = true;
@@ -130,17 +163,21 @@ module.exports = {
         return msg.reply("Maaf, tidak ada hasil yang ditemukan. Coba dengan kata kunci lain.");
       }
       
-      const shuffledResults = shuffleArray(results);
-      const itemsToSend = shuffledResults.slice(0, count);
+      const itemsToSend = shuffleArray(results).slice(0, count);
 
       for (const item of itemsToSend) {
         if (searchType === 'image') {
           await bot.sendMessage(msg.from, { image: { url: item }, caption: `Hasil pencarian untuk: *${searchQuery}*` }, { quoted: msg });
-        } else {
-          // Untuk video, kita kirim linknya. Pengguna bisa menggunakan downloader lain.
-          await bot.sendMessage(msg.from, { text: `Video ditemukan, coba unduh dengan downloader lain:\n${item}` }, { quoted: msg });
+        } else if (searchType === 'video') {
+            msg.reply(`Mencoba mengunduh video dari: ${item}\nMohon tunggu sebentar...`);
+            const videoUrl = await downloadViaPintodown(item);
+            if (videoUrl) {
+                await bot.sendMessage(msg.from, { video: { url: videoUrl }, caption: `Video *${searchQuery}* berhasil diunduh.` }, { quoted: msg });
+            } else {
+                msg.reply(`Gagal mengunduh video dari link tersebut.`);
+            }
         }
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Jeda antar kiriman
+        await sleep(1500); // Jeda antar kiriman
       }
 
       await msg.react("✅");

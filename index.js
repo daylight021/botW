@@ -123,6 +123,46 @@ async function startBot() {
   // Menangani Event Lainnya
   bot.ev.on("creds.update", saveCreds);
   bot.ev.on("messages.upsert", require("./events/CommandHandler").chatUpdate.bind(bot));
+
+  // Event untuk menangani perubahan anggota grup
+  bot.ev.on("group-participants.update", async (update) => {
+    const { id, participants, action } = update;
+
+    // Mengambil metadata grup untuk mendapatkan nama grup
+    let metadata;
+    try {
+      metadata = await bot.groupMetadata(id);
+    } catch (e) {
+      console.error("Gagal mengambil metadata grup:", e);
+      return; // Hentikan jika gagal
+    }
+
+    // Loop melalui setiap partisipan yang terpengaruh
+    for (const user of participants) {
+      const userJid = user.split('@')[0];
+
+      if (action === "add") {
+        // Ketika ada anggota baru yang ditambahkan atau bergabung
+        const welcomeMessage = `🎉 Selamat Datang di grup *${metadata.subject}*!\n\nHi @${userJid}, semoga betah ya di sini! Jangan lupa baca deskripsi grup.`;
+
+        // Kirim pesan sambutan ke grup dengan mention
+        bot.sendMessage(id, {
+          text: welcomeMessage,
+          mentions: [user]
+        });
+
+      } else if (action === "remove") {
+        // Ketika ada anggota yang keluar atau dikeluarkan
+        const goodbyeMessage = `👋 Selamat tinggal @${userJid}. Sampai jumpa lagi di lain waktu!`;
+
+        // Kirim pesan perpisahan ke grup dengan mention
+        bot.sendMessage(id, {
+          text: goodbyeMessage,
+          mentions: [user]
+        });
+      }
+    }
+  });
 }
 
 // Fungsi untuk memuat file perintah

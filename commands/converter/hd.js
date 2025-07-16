@@ -9,8 +9,12 @@ module.exports = {
     try {
       const quotedMessage = msg.quoted ? msg.quoted : msg;
       
-      // --- Memeriksa 'mtype' dari Serializer ---
-      const messageType = quotedMessage.mtype || "";
+      const messageType = quotedMessage.type || "";
+      
+      console.log("=== DEBUG INFO ===");
+      console.log("messageType:", messageType);
+      console.log("quotedMessage.msg:", quotedMessage.msg);
+      console.log("================");
       
       if (messageType !== 'imageMessage') {
         return msg.reply(`Kirim atau balas gambar dengan caption \`${usedPrefix + command}\`.\n\n*Opsi Tambahan:*\nGunakan flag \`-s\` untuk mengatur skala.\nContoh: \`${usedPrefix + command} -s 3\` (untuk upscale 3x).`);

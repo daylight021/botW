@@ -9,13 +9,12 @@ module.exports = {
     try {
       const quotedMessage = msg.quoted ? msg.quoted : msg;
       
-      // --- Menggunakan mimetype untuk memeriksa gambar ---
-      const mime = quotedMessage.mimetype || "";
+      // --- Memeriksa 'mtype' dari Serializer ---
+      const messageType = quotedMessage.mtype || "";
       
-      if (!/image/.test(mime)) {
+      if (messageType !== 'imageMessage') {
         return msg.reply(`Kirim atau balas gambar dengan caption \`${usedPrefix + command}\`.\n\n*Opsi Tambahan:*\nGunakan flag \`-s\` untuk mengatur skala.\nContoh: \`${usedPrefix + command} -s 3\` (untuk upscale 3x).`);
       }
-      // --- AKHIR PERBAIKAN ---
 
       let scale = 2;
       const scaleIndex = args.findIndex(arg => arg.toLowerCase() === '-s');

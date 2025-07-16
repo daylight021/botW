@@ -7,14 +7,14 @@ module.exports = {
   category: "converter",
   execute: async (msg, { bot, args, usedPrefix, command }) => {
     try {
-      const quoted = msg.quoted ? msg.quoted : msg;
-      const mime = quoted.mimetype || "";
+      const quotedMessage = msg.quoted ? msg.quoted : msg;
       
-      if (!/image/.test(mime)) {
+      // Memeriksa apakah serializer berhasil mengidentifikasi media sebagai gambar.
+      if (!quotedMessage.isMedia || quotedMessage.type !== 'imageMessage') {
         return msg.reply(`Kirim atau balas gambar dengan caption \`${usedPrefix + command}\`.\n\n*Opsi Tambahan:*\nGunakan flag \`-s\` untuk mengatur skala.\nContoh: \`${usedPrefix + command} -s 3\` (untuk upscale 3x).`);
       }
+      // --- AKHIR PERBAIKAN ---
 
-      // --- PERBAIKAN: PARSING ARGUMEN UNTUK SKALA ---
       let scale = 2; // Skala default adalah 2x
       const scaleIndex = args.findIndex(arg => arg.toLowerCase() === '-s');
 
@@ -31,11 +31,11 @@ module.exports = {
             scale = customScale;
         }
       }
-      // --- AKHIR PERBAIKAN ---
 
       await msg.react("⏳");
 
-      const imageBuffer = await bot.downloadMediaMessage(quoted);
+      // Menggunakan objek 'quotedMessage' yang sudah benar untuk diunduh
+      const imageBuffer = await bot.downloadMediaMessage(quotedMessage);
       const metadata = await sharp(imageBuffer).metadata();
       
       const newWidth = metadata.width * scale;

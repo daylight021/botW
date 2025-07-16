@@ -1,4 +1,4 @@
-const tf = require('@tensorflow/tfjs-node-cpu');
+const tf = require('@tensorflow/tfjs-node');
 const Upscaler = require('upscaler/node');
 
 // Inisialisasi model upscaler

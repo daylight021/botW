@@ -1,4 +1,5 @@
 const sharp = require('sharp');
+const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 
 module.exports = {
   name: "hd",
@@ -8,13 +9,7 @@ module.exports = {
   execute: async (msg, { bot, args, usedPrefix, command }) => {
     try {
       const quotedMessage = msg.quoted ? msg.quoted : msg;
-      
       const messageType = quotedMessage.type || "";
-      
-      console.log("=== DEBUG INFO ===");
-      console.log("messageType:", messageType);
-      console.log("quotedMessage.msg:", quotedMessage.msg);
-      console.log("================");
       
       if (messageType !== 'imageMessage') {
         return msg.reply(`Kirim atau balas gambar dengan caption \`${usedPrefix + command}\`.\n\n*Opsi Tambahan:*\nGunakan flag \`-s\` untuk mengatur skala.\nContoh: \`${usedPrefix + command} -s 3\` (untuk upscale 3x).`);
@@ -38,7 +33,12 @@ module.exports = {
 
       await msg.react("⏳");
 
-      const imageBuffer = await bot.downloadMediaMessage(quotedMessage);
+      const imageBuffer = await downloadMediaMessage(
+          quotedMessage,
+          'buffer',
+          {}
+      );
+      
       const metadata = await sharp(imageBuffer).metadata();
       
       const newWidth = metadata.width * scale;

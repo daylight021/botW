@@ -1,5 +1,5 @@
+const tf = require('@tensorflow/tfjs-node-cpu');
 const Upscaler = require('upscaler/node');
-const tf = require('@tensorflow/tfjs-node');
 
 // Inisialisasi model upscaler
 const upscaler = new Upscaler({
@@ -31,20 +31,15 @@ module.exports = {
 
       tf.dispose([imageTensor, upscaledTensor]);
 
-      // --- PERBAIKAN: Mengirim Gambar dengan Opsi Kualitas Tinggi ---
       await bot.sendMessage(msg.from, { 
           image: processedImage,
           caption: `✅ Gambar berhasil ditingkatkan dengan AI (2x)!`,
-          // Menambahkan flag untuk mengirim dalam kualitas HD
-          jpegThumbnail: processedImage.toString('base64'), // Diperlukan untuk beberapa versi
-          mimetype: 'image/png', // Pastikan mimetype benar
-          // Opsi di bawah ini mungkin diperlukan tergantung versi Baileys,
-          // tapi biasanya 'mimetype' dan 'jpegThumbnail' sudah cukup.
-          // highQuality: true 
+          jpegThumbnail: processedImage.toString('base64'),
+          mimetype: 'image/png',
       }, { quoted: msg });
-      // --- AKHIR PERBAIKAN ---
 
       await msg.react("✅");
+
     } catch (error) {
       console.error("Error pada perintah HD (UpscalerJS):", error);
       await msg.react("❌");

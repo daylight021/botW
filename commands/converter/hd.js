@@ -9,18 +9,19 @@ module.exports = {
     try {
       const quotedMessage = msg.quoted ? msg.quoted : msg;
       
-      // Memeriksa apakah serializer berhasil mengidentifikasi media sebagai gambar.
-      if (!quotedMessage.isMedia || quotedMessage.type !== 'imageMessage') {
+      // --- Menggunakan mimetype untuk memeriksa gambar ---
+      const mime = quotedMessage.mimetype || "";
+      
+      if (!/image/.test(mime)) {
         return msg.reply(`Kirim atau balas gambar dengan caption \`${usedPrefix + command}\`.\n\n*Opsi Tambahan:*\nGunakan flag \`-s\` untuk mengatur skala.\nContoh: \`${usedPrefix + command} -s 3\` (untuk upscale 3x).`);
       }
       // --- AKHIR PERBAIKAN ---
 
-      let scale = 2; // Skala default adalah 2x
+      let scale = 2;
       const scaleIndex = args.findIndex(arg => arg.toLowerCase() === '-s');
 
       if (scaleIndex !== -1 && args[scaleIndex + 1]) {
         let customScale = parseInt(args[scaleIndex + 1], 10);
-        
         if (isNaN(customScale) || customScale < 2) {
             msg.reply("⚠️ Skala tidak valid. Menggunakan skala default (2x).");
             scale = 2;
@@ -34,7 +35,6 @@ module.exports = {
 
       await msg.react("⏳");
 
-      // Menggunakan objek 'quotedMessage' yang sudah benar untuk diunduh
       const imageBuffer = await bot.downloadMediaMessage(quotedMessage);
       const metadata = await sharp(imageBuffer).metadata();
       

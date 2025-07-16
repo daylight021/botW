@@ -182,7 +182,7 @@ module.exports = {
         if (session.host !== senderId) return msg.reply("⚠️ Hanya host yang bisa menghentikan game.");
         
         await msg.react("🛑");
-        const endMessage = `ℹ️ Game UNO di grup ini telah dihentikan oleh host.`;
+        const endMessage = `ℹ️ Game UNO di grup ${session.groupId} telah dihentikan oleh host ${session.host}.`;
         if (session.players.length > 0) {
             await notifyPlayersOfEnd(bot, session.players, null, endMessage);
         }

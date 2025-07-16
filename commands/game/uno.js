@@ -30,9 +30,9 @@ const Terjemahan = {
         '9': 'NINE', 'sembilan': 'NINE', 'nine': 'NINE',
         'skip': 'SKIP', 'lewati': 'SKIP',
         'reverse': 'REVERSE', 'putar-balik': 'REVERSE',
-        'draw-two': 'DRAW_TWO', 'tambah-2': 'DRAW_TWO', 'tambah_2': 'DRAW_TWO',
+        'draw-two': 'DRAW_TWO', 'tambah-2': 'DRAW_TWO', 'tambah_2': 'DRAW_TWO', '+2': 'DRAW_TWO',
         'wild': 'WILD', 'hitam': 'WILD',
-        'wild-draw-four': 'WILD_DRAW_FOUR', 'tambah-4': 'WILD_DRAW_FOUR', 'tambah_4': 'WILD_DRAW_FOUR', 'wild_draw-4': 'WILD_DRAW_FOUR', 'wild-draw_4': 'WILD_DRAW_FOUR',
+        'wild-draw-four': 'WILD_DRAW_FOUR', 'tambah-4': 'WILD_DRAW_FOUR', 'tambah_4': 'WILD_DRAW_FOUR', 'wild_draw-4': 'WILD_DRAW_FOUR', 'wild-draw_4': 'WILD_DRAW_FOUR', '+4': 'WILD_DRAW_FOUR',
     }
 };
 
@@ -161,7 +161,8 @@ module.exports = {
 
         if (command === "unocreate") {
             if (unoGames[groupId]) return msg.reply("⚠️ Sudah ada sesi game UNO yang aktif di grup ini.");
-            unoGames[groupId] = { host: senderId, players: [{ id: senderId, name: senderName }], status: 'waiting' };
+            // Inisialisasi array 'winners' untuk sistem peringkat
+            unoGames[groupId] = { host: senderId, players: [{ id: senderId, name: senderName }], status: 'waiting', winners: [] };
             return msg.reply(`✅ Lobi UNO dibuat oleh ${senderName} (@${senderId.split('@')[0]})!\nKetik \`${usedPrefix}unojoin\` untuk bergabung.`, { mentions: [senderId] });
         }
 
@@ -217,16 +218,17 @@ module.exports = {
             if (session.players.length < 2) return msg.reply("⚠️ Butuh minimal 2 pemain.");
             if (session.status === 'playing') return msg.reply("⚠️ Game sudah dimulai.");
 
+            // --- MENGACAK URUTAN PEMAIN ---
+            session.players.sort(() => Math.random() - 0.5);
+
             session.status = 'playing';
             session.game = new Game(session.players.map(p => p.id));
 
-            await msg.reply("✅ Game dimulai! Mengirim kartu ke setiap pemain...");
+            await msg.reply(`✅ Urutan pemain telah diacak! Game dimulai! Mengirim kartu...`);
             await sleep(1500);
-
             for (const p of session.players) {
                 await sendPlayerHand(bot, p, session.game.getPlayer(p.id).hand, usedPrefix);
             }
-
             await announceGameState(bot, msg, session);
             return;
         }
@@ -266,6 +268,7 @@ module.exports = {
             let cardToPlay;
 
             try {
+                // Logika untuk memilih kartu yang akan dimainkan
                 const isWild = Terjemahan.nilai[input1] === 'WILD' || Terjemahan.nilai[input1] === 'WILD_DRAW_FOUR';
                 if (isWild) {
                     const valueToFind = Value[Terjemahan.nilai[input1]];
@@ -280,29 +283,52 @@ module.exports = {
                     if (!colorKey || !valueKey) return msg.reply("⚠️ Input kartu tidak valid. (Contoh: .uno merah 7)");
                     cardToPlay = player.hand.find(c => c.color === Color[colorKey] && c.value === Value[valueKey]);
                 }
-
                 if (!cardToPlay) return msg.reply("⚠️ Anda tidak memiliki kartu tersebut atau kartu tidak cocok!");
 
+                // Mainkan kartu
                 game.play(cardToPlay);
 
+                // --- LOGIKA MULTI-WINNER ---
                 if (player.hand.length === 0) {
-                    const winner = session.players.find(p => p.id === senderId);
-                    let scoreboard = session.players.filter(p => p.id !== winner.id)
-                        .map(p => `- ${p.name}: ${game.getPlayer(p.id).hand.length} kartu`).join('\n');
+                    const winnerRank = session.winners.length + 1;
+                    const winnerPlayer = session.players.find(p => p.id === senderId);
 
-                    const endMessageToGroup = `🎉 *PEMENANG!* 🎉\n\nSelamat kepada ${winner.name} (@${winner.id.split('@')[0]}), dia telah menghabiskan semua kartunya!\n\n🏆 *Papan Skor Akhir* 🏆\n${scoreboard}`;
-                    const endMessageToLosers = `Game UNO telah berakhir. Pemenangnya adalah ${winner.name}!`;
+                    session.winners.push({ rank: winnerRank, name: winnerPlayer.name, id: winnerPlayer.id });
 
-                    await msg.reply(endMessageToGroup, { mentions: session.players.map(p => p.id) });
-                    await notifyPlayersOfEnd(bot, session.players, winner, endMessageToLosers);
-                    delete unoGames[groupId];
-                    return;
+                    await msg.reply(`🎉 *LUAR BIASA!* 🎉\n\n${winnerPlayer.name} (@${winnerPlayer.id.split('@')[0]}) berhasil menjadi *Juara ${winnerRank}*!`, { mentions: [winnerPlayer.id] });
+
+                    game.removePlayer(senderId); // Hapus pemain dari putaran
+
+                    const remainingPlayers = game.players;
+
+                    if (remainingPlayers.length <= 1) {
+                        if (remainingPlayers.length === 1) {
+                            const lastPlayer = session.players.find(p => p.id === remainingPlayers[0].name);
+                            session.winners.push({ rank: winnerRank + 1, name: lastPlayer.name, id: lastPlayer.id });
+                        }
+
+                        let finalScoreboard = session.winners
+                            .map(w => `Juara ${w.rank}: ${w.name} (@${w.id.split('@')[0]})`)
+                            .join('\n');
+
+                        await sleep(1500);
+                        await msg.reply(`🏆 *PERMAINAN SELESAI* 🏆\n\nBerikut adalah papan peringkat akhir:\n\n${finalScoreboard}`, { mentions: session.winners.map(w => w.id) });
+
+                        delete unoGames[groupId];
+                        return;
+                    }
+
+                    await sleep(1500);
+                    await msg.reply(`Permainan berlanjut dengan ${remainingPlayers.length} pemain tersisa...`);
+                    await announceGameState(bot, msg, session);
+
+                } else {
+                    // Jika belum menang, lanjutkan seperti biasa
+                    await msg.react("🃏");
+                    await sleep(1000);
+                    await announceGameState(bot, msg, session);
+                    await sendPlayerHand(bot, { id: senderId, name: senderName }, player.hand, usedPrefix);
                 }
-
-                await msg.react("🃏");
-                await sleep(1000);
-                await announceGameState(bot, msg, session);
-                await sendPlayerHand(bot, { id: senderId, name: senderName }, player.hand, usedPrefix);
 
             } catch (e) {
                 return msg.reply(`❌ Gagal memainkan kartu: ${e.message}`);

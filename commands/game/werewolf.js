@@ -69,6 +69,17 @@ function checkWinCondition(game) {
     return null;
 }
 
+async function notifyPlayersOfEnd(bot, players, endMessage) {
+    for (const player of players) {
+        try {
+            await bot.sendMessage(player.id, { text: endMessage });
+            await sleep(500); // Jeda antar notifikasi agar tidak spam
+        } catch (e) {
+            console.error(`Gagal mengirim notifikasi akhir ww ke ${player.name}:`, e);
+        }
+    }
+}
+
 async function handlePlayerDeath(bot, game, killedPlayer, cause) {
     if (!killedPlayer || !killedPlayer.isAlive) return [];
     killedPlayer.isAlive = false;
@@ -165,7 +176,7 @@ async function progressGame(bot, groupId) {
             } else {
                 deathAnnouncements.push("Pagi ini terasa damai. Ajaibnya, tidak ada korban jiwa semalam.");
             }
-            
+
             await bot.sendMessage(groupId, { text: "*NARASI:*\n" + deathAnnouncements.join('\n') });
             await sleep(2000);
 
@@ -193,7 +204,7 @@ async function progressGame(bot, groupId) {
             game.phase = GamePhase.EXECUTION;
             game.timeout = setTimeout(() => progressGame(bot, groupId), TIMEOUTS.VOTING);
             break;
-        
+
         case GamePhase.EXECUTION:
             const votes = {};
             game.players.filter(p => p.isAlive && p.vote).forEach(p => { votes[p.vote] = (votes[p.vote] || 0) + 1; });
@@ -215,7 +226,7 @@ async function progressGame(bot, groupId) {
             } else {
                 await bot.sendMessage(groupId, { text: "Voting berakhir seri. Tidak ada yang digantung hari ini." });
             }
-            
+
             game.phase = GameState.WAITING;
             await progressGame(bot, groupId);
             break;
@@ -242,6 +253,7 @@ async function handlePrivateMessage(bot, msg) {
         clearTimeout(game.timeout);
         await progressGame(bot, game.id);
     }
+    
     else if (player.role === Roles.WEREWOLF && game.phase === GamePhase.NIGHT_WEREWOLF) {
         if (mentioned.length !== 1) return msg.reply("⚠️ Kamu hanya bisa memilih SATU target.");
         const target = game.players.find(p => p.id === mentioned[0]);
@@ -252,6 +264,7 @@ async function handlePrivateMessage(bot, msg) {
         const notification = `🐺 *Info Tim:* Rekanmu, *${player.name}*, telah memberikan suaranya untuk memangsa *${target.name}*.`;
         for (const ww of otherWerewolves) await bot.sendMessage(ww.id, { text: notification });
     }
+
     else if (player.role === Roles.SEER && game.phase === GamePhase.NIGHT_SEER) {
         if (mentioned.length !== 1) return msg.reply("⚠️ Kamu hanya bisa menyelidiki SATU orang.");
         const target = game.players.find(p => p.id === mentioned[0]);
@@ -261,6 +274,7 @@ async function handlePrivateMessage(bot, msg) {
         clearTimeout(game.timeout);
         await progressGame(bot, game.id);
     }
+
     else if (player.role === Roles.HUNTER && game.phase === GamePhase.HUNTER_REVENGE) {
         if (mentioned.length !== 1) return msg.reply("⚠️ Kamu hanya bisa menembak SATU orang.");
         const target = game.players.find(p => p.id === mentioned[0]);
@@ -275,70 +289,103 @@ async function handlePrivateMessage(bot, msg) {
 
 // --- LOGIKA UTAMA PERINTAH ---
 module.exports = {
-  name: "ww",
-  alias: ["werewolf", "wwcreate", "wwjoin", "wwstart", "wwend", "vote"],
-  description: "Memainkan game Werewolf.",
-  category: "game",
-  execute: async (msg, { bot, args, command, usedPrefix }) => {
-    if (msg.isPrivate) {
-        return await handlePrivateMessage(bot, msg);
-    }
-    const from = msg.from;
-    const senderId = msg.sender;
-    const senderName = msg.pushName || "Pemain";
+    name: "ww",
+    alias: ["werewolf", "wwcreate", "wwjoin", "wwstart", "wwend", "vote"],
+    description: "Memainkan game Werewolf.",
+    category: "game",
+    execute: async (msg, { bot, args, command, usedPrefix }) => {
+        if (msg.isPrivate) {
+            return await handlePrivateMessage(bot, msg);
+        }
 
-    if (command === "ww" && !args.length) {
-        const helpText = `🐺 *Game Werewolf Bot* 🐺\n\n*Perintah Lobi:*\n- \`${usedPrefix}wwcreate\`: Membuat lobi.\n- \`${usedPrefix}wwjoin\`: Bergabung ke lobi.\n- \`${usedPrefix}wwstart\`: Memulai game (host).\n- \`${usedPrefix}wwend\`: Menghentikan game (host).\n\n*Perintah Saat Bermain:*\n- \`${usedPrefix}vote @pemain\`: Vote pemain di siang hari.`;
-        return msg.reply(helpText);
-    }
-    if (command === "wwcreate") {
-        if (games[from]) return msg.reply("⚠️ Lobi game Werewolf sudah ada di grup ini.");
-        games[from] = { id: from, host: senderId, players: [{ id: senderId, name: senderName }], status: GameState.WAITING, day: 0, actions: [] };
-        return msg.reply(`✅ Lobi Werewolf dibuat oleh ${senderName}!\nKetik \`${usedPrefix}wwjoin\` untuk bergabung.`, { mentions: [senderId] });
-    }
-    if (command === "wwjoin") {
-        const game = games[from];
-        if (!game || game.status !== GameState.WAITING) return msg.reply("⚠️ Tidak ada lobi yang sedang menunggu pemain.");
-        if (game.players.some(p => p.id === senderId)) return msg.reply("⚠️ Kamu sudah berada di dalam lobi.");
-        game.players.push({ id: senderId, name: senderName });
-        const playerList = game.players.map((p, i) => `${i + 1}. ${p.name}`).join('\n');
-        return msg.reply(`✅ ${senderName} berhasil bergabung!\n\n*Daftar Pemain:*\n${playerList}`, { mentions: [senderId] });
-    }
-    if (command === "wwend") {
-        if (games[from]) {
-            if (games[from].timeout) clearTimeout(games[from].timeout);
+        const from = msg.from;
+        const senderId = msg.sender;
+        const senderName = msg.pushName || "Pemain";
+
+        if (command === "ww" && !args.length) {
+            const helpText = `🐺 *Game Werewolf Bot* 🐺\n\n*Perintah Lobi:*\n- \`${usedPrefix}wwcreate\`: Membuat lobi.\n- \`${usedPrefix}wwjoin\`: Bergabung ke lobi.\n- \`${usedPrefix}wwstart\`: Memulai game (host).\n- \`${usedPrefix}wwend\`: Menghentikan game (host).\n\n*Perintah Saat Bermain:*\n- \`${usedPrefix}vote @pemain\`: Vote pemain di siang hari.`;
+            return msg.reply(helpText);
+        }
+        
+        if (command === "wwcreate") {
+            if (games[from]) return msg.reply("⚠️ Lobi game Werewolf sudah ada di grup ini.");
+            games[from] = { id: from, host: senderId, players: [{ id: senderId, name: senderName }], status: GameState.WAITING, day: 0, actions: [] };
+            return msg.reply(`✅ Lobi Werewolf dibuat oleh ${senderName}!\nKetik \`${usedPrefix}wwjoin\` untuk bergabung.`, { mentions: [senderId] });
+        }
+
+        if (command === "wwjoin") {
+            const game = games[from];
+            if (!game || game.status !== GameState.WAITING) return msg.reply("⚠️ Tidak ada lobi yang sedang menunggu pemain.");
+            if (game.players.some(p => p.id === senderId)) return msg.reply("⚠️ Kamu sudah berada di dalam lobi.");
+            game.players.push({ id: senderId, name: senderName });
+            const playerList = game.players.map((p, i) => `${i + 1}. ${p.name}`).join('\n');
+            return msg.reply(`✅ ${senderName} berhasil bergabung!\n\n*Daftar Pemain:*\n${playerList}`, { mentions: [senderId] });
+        }
+
+        if (command === "wwend") {
+            const game = games[from];
+            if (!game) return msg.reply("⚠️ Tidak ada game yang sedang berjalan.");
+
+            // Cek apakah yang memerintah adalah host
+            if (game.host !== senderId) return msg.reply("⚠️ Hanya host yang bisa menghentikan permainan.");
+
+            // Ambil nama grup dari metadata
+            let groupName = 'grup ini';
+            try {
+                const metadata = await bot.groupMetadata(from);
+                groupName = metadata.subject;
+            } catch (e) {
+                console.error("Gagal mengambil metadata grup untuk .wwend:", e);
+            }
+
+            // Ambil nama dan nomor host
+            const hostPlayer = game.players.find(p => p.id === game.host);
+            const hostName = hostPlayer ? hostPlayer.name : "Host";
+            const hostNumber = game.host.split('@')[0];
+
+            // Buat pesan yang akan dikirim ke PM setiap pemain
+            const endMessageForPM = `ℹ️ Game Werewolf di grup *${groupName}* telah dihentikan oleh host *${hostName}* (${hostNumber}).`;
+
+            // Kirim notifikasi ke semua pemain
+            await notifyPlayersOfEnd(bot, game.players, endMessageForPM);
+
+            // Hentikan semua timer yang mungkin berjalan
+            if (game.timeout) clearTimeout(game.timeout);
+
+            // Hapus sesi game dari memori
             delete games[from];
-            return msg.reply("🛑 Permainan Werewolf telah dihentikan.");
+
+            return msg.reply(`🛑 Permainan Werewolf telah dihentikan oleh host.`);
         }
-        return msg.reply("⚠️ Tidak ada game yang sedang berjalan.");
-    }
-    if (command === "wwstart") {
-        const game = games[from];
-        if (!game || game.host !== senderId) return msg.reply("⚠️ Hanya host yang bisa memulai game.");
-        if (game.status === GameState.PLAYING) return msg.reply("⚠️ Game sudah berjalan.");
-        if (game.players.length < 5) return msg.reply("⚠️ Butuh minimal 5 pemain.");
-        await msg.reply("Baiklah, permainan dimulai...");
-        game.status = GameState.PLAYING;
-        assignRoles(game.players);
-        await msg.reply("Peran rahasia sedang dibagikan... Silakan periksa chat pribadi (PM).");
-        for (const player of game.players) {
-            await sendRoleInfo(bot, player, game);
-            await sleep(1200);
+
+        if (command === "wwstart") {
+            const game = games[from];
+            if (!game || game.host !== senderId) return msg.reply("⚠️ Hanya host yang bisa memulai game.");
+            if (game.status === GameState.PLAYING) return msg.reply("⚠️ Game sudah berjalan.");
+            if (game.players.length < 5) return msg.reply("⚠️ Butuh minimal 5 pemain.");
+            await msg.reply("Baiklah, permainan dimulai...");
+            game.status = GameState.PLAYING;
+            assignRoles(game.players);
+            await msg.reply("Peran rahasia sedang dibagikan... Silakan periksa chat pribadi (PM).");
+            for (const player of game.players) {
+                await sendRoleInfo(bot, player, game);
+                await sleep(1200);
+            }
+            await sleep(3000);
+            game.phase = GameState.WAITING;
+            await progressGame(bot, from);
         }
-        await sleep(3000);
-        game.phase = GameState.WAITING;
-        await progressGame(bot, from);
-    }
-    if (command === "vote" && !msg.isPrivate) {
-        const game = games[from];
-        if (!game || game.phase !== GamePhase.DAY_VOTING) return msg.reply("⚠️ Sekarang bukan waktunya untuk voting.");
-        const player = game.players.find(p => p.id === senderId && p.isAlive);
-        if (!player) return msg.reply("⚠️ Kamu tidak bisa vote.");
-        const targetId = msg.mentionedJid?.[0];
-        const target = game.players.find(p => p.id === targetId && p.isAlive);
-        if (!target) return msg.reply("⚠️ Target vote tidak valid atau sudah mati.");
-        player.vote = targetId;
-        return msg.reply(`✅ ${player.name} telah memberikan suaranya untuk menggantung ${target.name}.`);
-    }
-  },
+
+        if (command === "vote" && !msg.isPrivate) {
+            const game = games[from];
+            if (!game || game.phase !== GamePhase.DAY_VOTING) return msg.reply("⚠️ Sekarang bukan waktunya untuk voting.");
+            const player = game.players.find(p => p.id === senderId && p.isAlive);
+            if (!player) return msg.reply("⚠️ Kamu tidak bisa vote.");
+            const targetId = msg.mentionedJid?.[0];
+            const target = game.players.find(p => p.id === targetId && p.isAlive);
+            if (!target) return msg.reply("⚠️ Target vote tidak valid atau sudah mati.");
+            player.vote = targetId;
+            return msg.reply(`✅ ${player.name} telah memberikan suaranya untuk menggantung ${target.name}.`);
+        }
+    },
 };

@@ -113,11 +113,22 @@ async function sendPlayerHand(bot, player, hand, usedPrefix) {
 async function announceGameState(bot, msg, session) {
     await sleep(1000);
     const game = session.game;
+    const activePlayers = session.players.filter(p => p.isActive !== false);
+
+    // Cek jika hanya ada 1 pemain aktif tersisa setelah giliran
+    if (activePlayers.length <= 1) return;
+
+    // Cari pemain saat ini dari daftar pemain yang masih aktif
+    const currentPlayer = activePlayers.find(p => p.id === game.currentPlayer.name);
+
+    // Jika currentPlayer tidak ditemukan (artinya dia baru saja menang),
+    // biarkan uno-engine secara otomatis menentukan giliran berikutnya dan panggil lagi.
+    if (!currentPlayer) {
+        console.log("Pemain saat ini sudah menang, mencari giliran selanjutnya...");
+        return;
+    }
+
     const topCard = game.discardedCard;
-    const currentPlayer = session.players.find(p => p.id === game.currentPlayer.name);
-
-    if (!currentPlayer) return msg.reply("Error Kritis: Pemain saat ini tidak ditemukan.");
-
     const topCardPath = path.join(__dirname, '../../lib/cards/', cardToFileName(topCard));
     if (!fs.existsSync(topCardPath)) return msg.reply("Error: Gagal menemukan gambar kartu teratas.");
 
@@ -263,6 +274,7 @@ module.exports = {
         if (command === "uno") {
             if (game.currentPlayer.name !== senderId) return msg.reply("⚠️ Belum giliran Anda!");
 
+            const player = game.getPlayer(senderId);
             const input1 = args[0]?.toLowerCase();
             const input2 = args[1]?.toLowerCase();
             let cardToPlay;
@@ -288,22 +300,23 @@ module.exports = {
                 // Mainkan kartu
                 game.play(cardToPlay);
 
-                // --- LOGIKA MULTI-WINNER ---
+                // --- LOGIKA MULTI-WINNER TANPA RESET ---
                 if (player.hand.length === 0) {
                     const winnerRank = session.winners.length + 1;
                     const winnerPlayer = session.players.find(p => p.id === senderId);
 
+                    // Tandai pemain sebagai tidak aktif agar dilewati di giliran berikutnya
+                    winnerPlayer.isActive = false;
                     session.winners.push({ rank: winnerRank, name: winnerPlayer.name, id: winnerPlayer.id });
 
                     await msg.reply(`🎉 *LUAR BIASA!* 🎉\n\n${winnerPlayer.name} (@${winnerPlayer.id.split('@')[0]}) berhasil menjadi *Juara ${winnerRank}*!`, { mentions: [winnerPlayer.id] });
 
-                    game.removePlayer(senderId); // Hapus pemain dari putaran
+                    const remainingPlayers = session.players.filter(p => p.isActive !== false);
 
-                    const remainingPlayers = game.players;
-
+                    // Periksa jika permainan sudah selesai
                     if (remainingPlayers.length <= 1) {
                         if (remainingPlayers.length === 1) {
-                            const lastPlayer = session.players.find(p => p.id === remainingPlayers[0].name);
+                            const lastPlayer = remainingPlayers[0];
                             session.winners.push({ rank: winnerRank + 1, name: lastPlayer.name, id: lastPlayer.id });
                         }
 
@@ -314,12 +327,15 @@ module.exports = {
                         await sleep(1500);
                         await msg.reply(`🏆 *PERMAINAN SELESAI* 🏆\n\nBerikut adalah papan peringkat akhir:\n\n${finalScoreboard}`, { mentions: session.winners.map(w => w.id) });
 
-                        delete unoGames[groupId];
+                        delete unoGames[groupId]; // Hapus sesi game
                         return;
                     }
 
+                    // Jika permainan belum selesai, lanjutkan
                     await sleep(1500);
                     await msg.reply(`Permainan berlanjut dengan ${remainingPlayers.length} pemain tersisa...`);
+
+                    // Langsung panggil announceGameState untuk melanjutkan ke giliran pemain aktif berikutnya
                     await announceGameState(bot, msg, session);
 
                 } else {
@@ -331,6 +347,7 @@ module.exports = {
                 }
 
             } catch (e) {
+                console.error("Error saat memainkan kartu UNO:", e);
                 return msg.reply(`❌ Gagal memainkan kartu: ${e.message}`);
             }
         }

@@ -23,8 +23,10 @@ module.exports = {
         {}
       );
       
-      // Membaca gambar menggunakan Jimp
+      // --- PERBAIKAN UTAMA: Cara Membaca Buffer dengan Jimp ---
+      // Menggunakan Jimp.read yang merupakan metode statis dari library
       const image = await Jimp.read(imageBuffer);
+      // --- AKHIR PERBAIKAN ---
 
       // Melakukan upscale 2x dengan algoritma kualitas tinggi
       image.scale(2, Jimp.RESIZE_HERMITE);

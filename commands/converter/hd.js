@@ -4,30 +4,29 @@ const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 // Fungsi sleep untuk menunggu proses AI selesai
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+// Fungsi untuk memanggil API Replicate dengan model yang benar
 async function enhanceWithReplicate(imageBuffer) {
     const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN;
     if (!REPLICATE_API_TOKEN) {
         throw new Error("REPLICATE_API_TOKEN tidak ditemukan di file .env");
     }
 
-    // 1. Mengubah buffer gambar menjadi format base64
     const base64Image = imageBuffer.toString('base64');
     const dataUrl = `data:image/jpeg;base64,${base64Image}`;
 
-    // 2. Memulai proses upscale di Replicate
+    // Memulai proses upscale di Replicate
     const startResponse = await axios.post(
         "https://api.replicate.com/v1/predictions",
         {
-            // Model Real-ESRGAN yang di-hosting di Replicate
-            version: "42fed1c4974146d4d2414e2be2c523779c4b758938d6e3874025ac23754d1494",
-            input: { image: dataUrl, scale: 2 }, // Skala bisa diatur di sini
+            version: "9283608cc6b7be6b65a8e44983a5012c5b079261a838705eff34c76063428C47",
+            input: { image: dataUrl, scale: 2 },
         },
-        { headers: { Authorization: `Token ${REPLICATE_API_TOKEN}` } }
+        { headers: { Authorization: `Token ${REPLICATE_API_TOKEN}`, 'Content-Type': 'application/json' } }
     );
 
     const endpointUrl = startResponse.data.urls.get;
 
-    // 3. Menunggu proses AI selesai
+    // Menunggu proses AI selesai
     let restoredImage = null;
     while (!restoredImage) {
         console.log("Menunggu hasil dari Replicate...");
@@ -41,10 +40,10 @@ async function enhanceWithReplicate(imageBuffer) {
         } else if (finalResponse.data.status === "failed") {
             throw new Error("Proses upscale di Replicate gagal.");
         }
-        await sleep(1000); // Tunggu 1 detik sebelum memeriksa lagi
+        await sleep(1000);
     }
     
-    // 4. Mengunduh gambar hasil
+    // Mengunduh gambar hasil
     const resultResponse = await axios.get(restoredImage, { responseType: 'arraybuffer' });
     return Buffer.from(resultResponse.data);
 }

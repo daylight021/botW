@@ -1,5 +1,6 @@
 const axios = require('axios');
 const FormData = require('form-data');
+// Impor fungsi download media yang benar dari Baileys
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 
 // Fungsi untuk memanggil API eksternal dari Vyro.ai
@@ -37,7 +38,9 @@ module.exports = {
     try {
       const quotedMessage = msg.quoted ? msg.quoted : msg;
       
-      if (!/image/.test(quotedMessage.mtype || '')) {
+      const messageType = quotedMessage.type || "";
+      
+      if (messageType !== 'imageMessage') {
         return msg.reply(`Kirim atau balas gambar dengan caption \`${usedPrefix + command}\` untuk meningkatkan kualitasnya menggunakan AI.`);
       }
 
@@ -55,7 +58,7 @@ module.exports = {
       await bot.sendMessage(msg.from, { 
           image: processedImage,
           caption: `✅ Gambar berhasil ditingkatkan dengan AI!`,
-          jpegThumbnail: processedImage.toString('base64'),
+          jpegThumbnail: processedImage.toString('base64'), // Diperlukan untuk mode HD
           mimetype: 'image/jpeg'
       }, { quoted: msg });
 

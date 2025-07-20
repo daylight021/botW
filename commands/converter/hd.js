@@ -2,7 +2,7 @@ const axios = require('axios');
 const FormData = require('form-data');
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 
-// --- Menggunakan API eksternal dari Vyro.ai ---
+// Fungsi untuk memanggil API eksternal dari Vyro.ai
 async function remini(imageBuffer, method = 'enhance') {
     return new Promise(async (resolve, reject) => {
         try {
@@ -16,7 +16,7 @@ async function remini(imageBuffer, method = 'enhance') {
                     headers: {
                         ...form.getHeaders(),
                         'accept': 'image/jpeg',
-                        'user-agent': 'Remini/1.0.0', // Meniru header aplikasi
+                        'user-agent': 'Remini/1.0.0',
                     },
                     responseType: 'arraybuffer',
                 }
@@ -36,13 +36,12 @@ module.exports = {
   execute: async (msg, { bot, usedPrefix, command }) => {
     try {
       const quotedMessage = msg.quoted ? msg.quoted : msg;
-      const mime = quotedMessage.mimetype || "";
       
-      if (!/image/.test(mime)) {
-        return msg.reply(`Kirim atau balas gambar dengan caption \`${usedPrefix + command}\` untuk meningkatkan kualitasnya menggunakan AI. Proses ini sangat cepat!`);
+      if (!/image/.test(quotedMessage.mtype || '')) {
+        return msg.reply(`Kirim atau balas gambar dengan caption \`${usedPrefix + command}\` untuk meningkatkan kualitasnya menggunakan AI.`);
       }
 
-      await msg.react("🧠"); // Reaksi "berpikir"
+      await msg.react("🧠");
 
       const imageBuffer = await downloadMediaMessage(
         quotedMessage,
@@ -50,10 +49,9 @@ module.exports = {
         {}
       );
       
-      // Memanggil fungsi remini dengan metode 'enhance'
       const processedImage = await remini(imageBuffer, 'enhance');
 
-      // Kirim gambar yang sudah diproses
+      // Mengirim gambar hasil dengan opsi kualitas HD
       await bot.sendMessage(msg.from, { 
           image: processedImage,
           caption: `✅ Gambar berhasil ditingkatkan dengan AI!`,

@@ -1,14 +1,36 @@
-const tf = require('@tensorflow/tfjs-node');
-const Upscaler = require('upscaler/node');
+const axios = require('axios');
+const FormData = require('form-data');
+const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 
-// Inisialisasi model upscaler
-const upscaler = new Upscaler({
-  model: 'esrgan-thick/2x', 
-});
+// --- Menggunakan API eksternal dari Vyro.ai ---
+async function remini(imageBuffer, method = 'enhance') {
+    return new Promise(async (resolve, reject) => {
+        try {
+            const form = new FormData();
+            form.append('image', imageBuffer, { filename: 'enhance_image.jpg', contentType: 'image/jpeg' });
+            form.append('model_version', 1);
+
+            const { data } = await axios.post(
+                `https://inferenceengine.vyro.ai/${method}`,
+                form, {
+                    headers: {
+                        ...form.getHeaders(),
+                        'accept': 'image/jpeg',
+                        'user-agent': 'Remini/1.0.0', // Meniru header aplikasi
+                    },
+                    responseType: 'arraybuffer',
+                }
+            );
+            resolve(data);
+        } catch (e) {
+            reject(e);
+        }
+    });
+}
 
 module.exports = {
   name: "hd",
-  alias: ["upscale", "remini", "enhance"],
+  alias: ["remini", "enhance", "upscale"],
   description: "Meningkatkan resolusi dan detail gambar menggunakan AI.",
   category: "converter",
   execute: async (msg, { bot, usedPrefix, command }) => {
@@ -17,33 +39,34 @@ module.exports = {
       const mime = quotedMessage.mimetype || "";
       
       if (!/image/.test(mime)) {
-        return msg.reply(`Kirim atau balas gambar dengan caption \`${usedPrefix + command}\` untuk meningkatkan kualitasnya menggunakan AI. Proses ini mungkin memakan waktu lebih lama.`);
+        return msg.reply(`Kirim atau balas gambar dengan caption \`${usedPrefix + command}\` untuk meningkatkan kualitasnya menggunakan AI. Proses ini sangat cepat!`);
       }
 
-      await msg.react("🧠");
+      await msg.react("🧠"); // Reaksi "berpikir"
 
-      const imageBuffer = await bot.downloadMediaMessage(quotedMessage);
-      const imageTensor = tf.node.decodeImage(imageBuffer, 3);
-      const upscaledTensor = await upscaler.upscale(imageTensor, {
-        output: 'tensor',
-      });
-      const processedImage = await tf.node.encodePng(upscaledTensor);
+      const imageBuffer = await downloadMediaMessage(
+        quotedMessage,
+        'buffer',
+        {}
+      );
+      
+      // Memanggil fungsi remini dengan metode 'enhance'
+      const processedImage = await remini(imageBuffer, 'enhance');
 
-      tf.dispose([imageTensor, upscaledTensor]);
-
+      // Kirim gambar yang sudah diproses
       await bot.sendMessage(msg.from, { 
           image: processedImage,
-          caption: `✅ Gambar berhasil ditingkatkan dengan AI (2x)!`,
+          caption: `✅ Gambar berhasil ditingkatkan dengan AI!`,
           jpegThumbnail: processedImage.toString('base64'),
-          mimetype: 'image/png',
+          mimetype: 'image/jpeg'
       }, { quoted: msg });
 
       await msg.react("✅");
 
     } catch (error) {
-      console.error("Error pada perintah HD (UpscalerJS):", error);
+      console.error("Error pada perintah HD (API):", error);
       await msg.react("❌");
-      msg.reply("Terjadi kesalahan saat memproses gambar dengan AI. Mungkin gambar terlalu besar atau memori tidak cukup.");
+      msg.reply("Terjadi kesalahan saat menghubungi server AI. Coba lagi beberapa saat.");
     }
   },
 };

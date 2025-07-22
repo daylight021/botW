@@ -55,7 +55,7 @@ module.exports = {
             const tempCtx = tempCanvas.getContext('2d');
             tempCtx.font = `${fontSize}px ${fontFamily}`;
 
-            // Cari baris terpanjang untuk menentukan lebar kanvas
+            // Cari baris terpanjang untuk menentukan lebar basis
             let maxWidth = 0;
             lines.forEach(line => {
                 const metrics = tempCtx.measureText(line);
@@ -64,11 +64,15 @@ module.exports = {
                 }
             });
 
-            // Atur ukuran kanvas akhir
-            const canvasWidth = maxWidth + (padding * 2);
-            const canvasHeight = (lines.length * fontSize) + ((lines.length + 1) * padding);
-            
-            const canvas = createCanvas(canvasWidth, canvasHeight);
+            // Hitung lebar dan tinggi yang dibutuhkan
+            const requiredWidth = maxWidth + (padding * 2);
+            const requiredHeight = (lines.length * fontSize) + ((lines.length + 1) * padding);
+
+            // --- Membuat Kanvas Menjadi Kotak ---
+            // Ambil sisi terpanjang (antara lebar dan tinggi) untuk dijadikan ukuran kanvas
+            const canvasSize = Math.max(requiredWidth, requiredHeight);
+
+            const canvas = createCanvas(canvasSize, canvasSize); // Gunakan ukuran yang sama untuk lebar & tinggi
             const ctx = canvas.getContext('2d');
 
             // --- Menggambar Teks ke Kanvas ---
@@ -109,6 +113,7 @@ module.exports = {
             });
 
             await bot.sendMessage(msg.from, await sticker.toMessage(), { quoted: msg });
+            await msg.react("✅");
 
         } catch (error) {
             console.error("Error pada perintah stext:", error);

@@ -2,28 +2,37 @@ const { createCanvas } = require('canvas');
 const { Sticker, StickerTypes } = require('wa-sticker-formatter');
 
 /**
- * Fungsi untuk memotong teks menjadi dua bagian yang seimbang.
+ * Fungsi baru yang lebih cerdas untuk memformat teks.
  * @param {string} text Teks input.
- * @returns {{ part1: string, part2: string }} Objek berisi dua bagian teks.
+ * @returns {string[]} Array berisi baris-baris teks yang sudah diformat.
  */
-function splitText(text) {
+function formatText(text) {
     const words = text.split(' ');
-    if (words.length === 1) {
-        // Jika hanya satu kata, bagi dua di tengah
-        const mid = Math.ceil(text.length / 2);
-        return { part1: text.substring(0, mid), part2: text.substring(mid) };
+    const lines = [];
+    let currentLine = [];
+
+    // Jika total kata sangat sedikit (1-3), buat setiap kata menjadi satu baris
+    if (words.length > 0 && words.length <= 3) {
+        return words;
     }
 
-    const middleIndex = Math.ceil(words.length / 2);
-    const part1 = words.slice(0, middleIndex).join(' ');
-    const part2 = words.slice(middleIndex).join(' ');
-    return { part1, part2 };
+    // Kelompokkan kata-kata menjadi baris berisi 2-3 kata
+    for (let i = 0; i < words.length; i++) {
+        currentLine.push(words[i]);
+        // Coba ambil 3 kata jika memungkinkan, jika tidak, ambil 2
+        const wordsPerLine = (words.length - i > 3) ? 3 : 2;
+        if (currentLine.length === wordsPerLine || i === words.length - 1) {
+            lines.push(currentLine.join(' '));
+            currentLine = [];
+        }
+    }
+    return lines;
 }
 
 module.exports = {
     name: "stext",
     alias: ["stickertext", "stikerteks"],
-    description: "Membuat stiker dari teks yang dipotong menjadi dua baris.",
+    description: "Membuat stiker dari teks dengan format khusus.",
     category: "converter",
     execute: async (msg, { bot, args, usedPrefix, command }) => {
         const text = args.join(' ');
@@ -35,43 +44,59 @@ module.exports = {
         try {
             await msg.react("🎨");
 
-            const { part1, part2 } = splitText(text);
+            const lines = formatText(text);
 
             // --- Pengaturan Kanvas dan Teks ---
-            const canvas = createCanvas(1, 1); // Ukuran sementara
-            const ctx = canvas.getContext('2d');
-            const fontSize = 60; // Ukuran font
-            const fontFamily = 'Helvetica-Bold, sans-serif'; // Font tebal
-            const padding = 20; // Jarak dari tepi
+            const fontSize = 80;
+            const fontFamily = 'Helvetica-Bold, sans-serif';
+            const padding = 30;
 
-            ctx.font = `${fontSize}px ${fontFamily}`;
+            const tempCanvas = createCanvas(1, 1);
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCtx.font = `${fontSize}px ${fontFamily}`;
 
-            // Mengukur lebar teks terpanjang untuk menentukan lebar kanvas
-            const metrics1 = ctx.measureText(part1);
-            const metrics2 = ctx.measureText(part2);
-            const textWidth = Math.max(metrics1.width, metrics2.width);
+            // Cari baris terpanjang untuk menentukan lebar kanvas
+            let maxWidth = 0;
+            lines.forEach(line => {
+                const metrics = tempCtx.measureText(line);
+                if (metrics.width > maxWidth) {
+                    maxWidth = metrics.width;
+                }
+            });
 
-            // Menentukan ukuran kanvas akhir
-            const canvasWidth = textWidth + (padding * 2);
-            const canvasHeight = (fontSize * 2) + (padding * 3); // Dua baris teks + padding
-
-            // Mengatur ulang ukuran kanvas
-            canvas.width = canvasWidth;
-            canvas.height = canvasHeight;
+            // Atur ukuran kanvas akhir
+            const canvasWidth = maxWidth + (padding * 2);
+            const canvasHeight = (lines.length * fontSize) + ((lines.length + 1) * padding);
             
+            const canvas = createCanvas(canvasWidth, canvasHeight);
+            const ctx = canvas.getContext('2d');
+
             // --- Menggambar Teks ke Kanvas ---
             ctx.fillStyle = 'white';
-            ctx.fillRect(0, 0, canvas.width, canvas.height); // Latar belakang putih
-
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
             ctx.fillStyle = 'black';
             ctx.font = `${fontSize}px ${fontFamily}`;
-            ctx.textAlign = 'center'; // Teks di tengah
-            ctx.textBaseline = 'middle';
 
-            // Menggambar baris pertama
-            ctx.fillText(part1, canvas.width / 2, (canvas.height / 2) - (fontSize / 2));
-            // Menggambar baris kedua
-            ctx.fillText(part2, canvas.width / 2, (canvas.height / 2) + (fontSize / 2) + (padding / 2));
+            lines.forEach((line, index) => {
+                const wordsInLine = line.split(' ');
+                let x = padding;
+                const y = padding + (fontSize / 2) + (index * (fontSize + padding));
+
+                // Jika ini bukan baris terakhir dan memiliki lebih dari satu kata, buat rata kiri-kanan
+                if (index < lines.length - 1 && wordsInLine.length > 1) {
+                    const totalWordsWidth = ctx.measureText(wordsInLine.join('')).width;
+                    const totalSpacing = canvasWidth - (padding * 2) - totalWordsWidth;
+                    const spaceBetweenWords = totalSpacing / (wordsInLine.length - 1);
+
+                    wordsInLine.forEach(word => {
+                        ctx.fillText(word, x, y);
+                        x += ctx.measureText(word).width + spaceBetweenWords;
+                    });
+                } else {
+                    // Jika baris terakhir atau hanya satu kata, buat rata kiri
+                    ctx.fillText(line, x, y);
+                }
+            });
 
             const imageBuffer = canvas.toBuffer('image/png');
 
@@ -80,7 +105,7 @@ module.exports = {
                 pack: 'My Bot',
                 author: 'Sticker Text',
                 type: StickerTypes.FULL,
-                quality: 80,
+                quality: 90,
             });
 
             await bot.sendMessage(msg.from, await sticker.toMessage(), { quoted: msg });

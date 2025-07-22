@@ -2,7 +2,7 @@ const { createCanvas } = require('canvas');
 const { Sticker, StickerTypes } = require('wa-sticker-formatter');
 
 /**
- * Fungsi baru yang lebih cerdas untuk memformat teks.
+ * Fungsi cerdas untuk memformat teks menjadi beberapa baris.
  * @param {string} text Teks input.
  * @returns {string[]} Array berisi baris-baris teks yang sudah diformat.
  */
@@ -11,17 +11,14 @@ function formatText(text) {
     const lines = [];
     let currentLine = [];
 
-    // Jika total kata sangat sedikit (1-3), buat setiap kata menjadi satu baris
     if (words.length > 0 && words.length <= 3) {
-        return words;
+        return words; // Setiap kata jadi satu baris jika total kata sedikit
     }
 
-    // Kelompokkan kata-kata menjadi baris berisi 2-3 kata
     for (let i = 0; i < words.length; i++) {
         currentLine.push(words[i]);
-        // Coba ambil 3 kata jika memungkinkan, jika tidak, ambil 2
         const wordsPerLine = (words.length - i > 3) ? 3 : 2;
-        if (currentLine.length === wordsPerLine || i === words.length - 1) {
+        if (currentLine.length >= wordsPerLine || i === words.length - 1) {
             lines.push(currentLine.join(' '));
             currentLine = [];
         }
@@ -64,41 +61,47 @@ module.exports = {
                 }
             });
 
-            // Hitung lebar dan tinggi yang dibutuhkan
+            // Hitung lebar dan tinggi yang dibutuhkan oleh teks
             const requiredWidth = maxWidth + (padding * 2);
             const requiredHeight = (lines.length * fontSize) + ((lines.length + 1) * padding);
 
-            // --- Membuat Kanvas Menjadi Kotak ---
-            // Ambil sisi terpanjang (antara lebar dan tinggi) untuk dijadikan ukuran kanvas
+            // --- PERBAIKAN: Membuat Kanvas Menjadi Kotak ---
+            // Ambil sisi terpanjang untuk dijadikan ukuran kanvas
             const canvasSize = Math.max(requiredWidth, requiredHeight);
-
+            
             const canvas = createCanvas(canvasSize, canvasSize); // Gunakan ukuran yang sama untuk lebar & tinggi
             const ctx = canvas.getContext('2d');
+            // --- AKHIR PERBAIKAN ---
 
             // --- Menggambar Teks ke Kanvas ---
             ctx.fillStyle = 'white';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillRect(0, 0, canvas.width, canvas.height); // Latar belakang putih
             ctx.fillStyle = 'black';
             ctx.font = `${fontSize}px ${fontFamily}`;
+            ctx.textBaseline = 'middle'; // Penting untuk penempatan vertikal
+
+            // Hitung total tinggi blok teks untuk menempatkannya di tengah kanvas
+            const totalTextHeight = (lines.length * fontSize) + ((lines.length - 1) * padding);
+            const startY = (canvas.height - totalTextHeight) / 2;
 
             lines.forEach((line, index) => {
                 const wordsInLine = line.split(' ');
-                let x = padding;
-                const y = padding + (fontSize / 2) + (index * (fontSize + padding));
+                const y = startY + (index * (fontSize + padding));
 
-                // Jika ini bukan baris terakhir dan memiliki lebih dari satu kata, buat rata kiri-kanan
                 if (index < lines.length - 1 && wordsInLine.length > 1) {
+                    // Logika rata kiri-kanan untuk semua baris kecuali baris terakhir
                     const totalWordsWidth = ctx.measureText(wordsInLine.join('')).width;
-                    const totalSpacing = canvasWidth - (padding * 2) - totalWordsWidth;
+                    const totalSpacing = requiredWidth - (padding * 2) - totalWordsWidth;
                     const spaceBetweenWords = totalSpacing / (wordsInLine.length - 1);
-
+                    
+                    let currentX = padding;
                     wordsInLine.forEach(word => {
-                        ctx.fillText(word, x, y);
-                        x += ctx.measureText(word).width + spaceBetweenWords;
+                        ctx.fillText(word, currentX, y);
+                        currentX += ctx.measureText(word).width + spaceBetweenWords;
                     });
                 } else {
-                    // Jika baris terakhir atau hanya satu kata, buat rata kiri
-                    ctx.fillText(line, x, y);
+                    // Logika rata kiri untuk baris terakhir
+                    ctx.fillText(line, padding, y);
                 }
             });
 

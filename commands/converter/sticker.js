@@ -40,7 +40,7 @@ module.exports = {
             pack: process.env.stickerPackname || "Bot Stiker",
             author: process.env.stickerAuthor || "Dibuat oleh Bot",
             type: StickerTypes.FULL,
-            quality: 50,
+            quality: 90,
         };
 
         // --- GUNAKAN FUNGSI BERBEDA UNTUK VIDEO ---

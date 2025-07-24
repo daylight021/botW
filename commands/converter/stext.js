@@ -105,8 +105,8 @@ module.exports = {
 
             const imageBuffer = canvas.toBuffer('image/png');
             const sticker = new Sticker(imageBuffer, {
-                pack: 'My Bot',
-                author: 'Sticker Text',
+                pack: process.env.stickerPackname,
+                author: process.env.stickerAuthor,
                 type: StickerTypes.FULL,
                 quality: 90,
             });

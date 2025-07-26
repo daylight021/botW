@@ -7,7 +7,6 @@ const axios = require('axios');
 const TEMP_DIR = path.join(__dirname, '../../temp');
 if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true });
 
-// Fungsi untuk mendapatkan info video
 async function getYtInfo(url) {
     const info = await ytdl.getInfo(url);
     const videoFormats = ytdl.filterFormats(info.formats, 'videoonly').filter(f => f.container === 'mp4');
@@ -19,7 +18,6 @@ async function getYtInfo(url) {
     return { info, videoFormats, audioFormats };
 }
 
-// Fungsi untuk menggabungkan video dan audio
 function mergeVideoAudio(videoPath, audioPath, outputPath) {
     return new Promise((resolve, reject) => {
         const command = `ffmpeg -i "${videoPath}" -i "${audioPath}" -c:v copy -c:a aac "${outputPath}"`;
@@ -39,7 +37,7 @@ module.exports = {
   description: "Unduh video dari YouTube dengan pilihan kualitas HD.",
   execute: async (msg, { args, bot, usedPrefix, command }) => {
     const url = args[0];
-    const quality = args[1]; // Argumen kedua sekarang adalah kualitas
+    const quality = args[1];
 
     if (!url || !ytdl.validateURL(url)) {
       return msg.reply("❌ Masukkan URL YouTube yang valid.");
@@ -53,34 +51,29 @@ module.exports = {
 
         if (!quality) {
             const uniqueQualities = [...new Set(videoFormats.map(f => f.qualityLabel))].filter(Boolean);
-            
             if (uniqueQualities.length === 0) {
                 return msg.reply("Tidak ada pilihan kualitas video yang tersedia untuk link ini.");
             }
 
-            // Membuat array tombol dari setiap kualitas yang tersedia
-            const templateButtons = uniqueQualities.map((q, index) => ({
-                index: index + 1,
-                // Saat tombol ditekan, ia akan mengirim kembali perintah lengkap
-                quickReplyButton: {
-                    displayText: `Kualitas ${q}`,
-                    id: `${usedPrefix + command} ${url} ${q}`
-                }
+            const buttons = uniqueQualities.map((q, index) => ({
+                // Tombol ini akan mengirim kembali pesan saat ditekan
+                buttonId: `${usedPrefix + command} ${url} ${q}`,
+                buttonText: { displayText: `Kualitas ${q}` },
+                type: 1
             }));
             
             const buttonMessage = {
                 text: `*${videoTitle}*\n\nSilakan pilih salah satu kualitas video di bawah ini:`,
                 footer: 'Tekan tombol untuk mengunduh',
-                templateButtons: templateButtons,
-                // Menambahkan thumbnail agar lebih menarik
+                buttons: buttons, // Menggunakan 'buttons' bukan 'templateButtons'
+                headerType: 4, // Header Tipe 4 adalah untuk gambar
                 image: { url: thumbnailUrl }
             };
 
             await bot.sendMessage(msg.from, buttonMessage, { quoted: msg });
-            return; // Hentikan eksekusi di sini, tunggu pengguna menekan tombol
+            return;
         }
 
-        // Kode di bawah ini hanya akan berjalan jika argumen 'quality' sudah ada
         const selectedVideo = videoFormats.find(f => f.qualityLabel === quality);
         if (!selectedVideo) {
             await msg.react("⚠️");

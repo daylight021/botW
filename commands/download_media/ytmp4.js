@@ -55,21 +55,25 @@ module.exports = {
                 return msg.reply("Tidak ada pilihan kualitas video yang tersedia untuk link ini.");
             }
 
-            const buttons = uniqueQualities.map((q, index) => ({
-                // Tombol ini akan mengirim kembali pesan saat ditekan
-                buttonId: `${usedPrefix + command} ${url} ${q}`,
+            // --- PERBAIKAN FINAL: Struktur Tombol untuk Baileys v6.7+ ---
+            const buttons = uniqueQualities.map(q => ({
+                // Tipe 1 adalah untuk "balasan cepat"
+                type: 1,
+                // Teks yang akan ditampilkan di tombol
                 buttonText: { displayText: `Kualitas ${q}` },
-                type: 1
+                // ID ini adalah TEKS yang akan dikirim kembali saat tombol ditekan
+                buttonId: `${usedPrefix + command} ${url} ${q}`
             }));
             
             const buttonMessage = {
-                text: `*${videoTitle}*\n\nSilakan pilih salah satu kualitas video di bawah ini:`,
-                footer: 'Tekan tombol untuk mengunduh',
-                buttons: buttons, // Menggunakan 'buttons' bukan 'templateButtons'
-                headerType: 4, // Header Tipe 4 adalah untuk gambar
-                image: { url: thumbnailUrl }
+                text: `*${videoTitle}*`,
+                footer: 'Silakan pilih salah satu kualitas video di bawah ini:',
+                buttons: buttons,
+                headerType: 1
             };
+            // --- AKHIR PERBAIKAN ---
 
+            // Mengirim pesan dengan tombol
             await bot.sendMessage(msg.from, buttonMessage, { quoted: msg });
             return;
         }
